@@ -100,13 +100,23 @@ export const bookApi = {
   },
 
   // 导出绘本
-  export: async (bookId: number, format: string, quality: string): Promise<{ download_url: string }> => {
+  export: async (bookId: number, format: string, quality: string): Promise<{
+    message: string;
+    filename: string;
+    file_type: string;
+    book_id: number;
+  }> => {
     const response = await api.post(`/books/${bookId}/export`, {
       book_id: bookId,
       format,
       quality
     });
     return response.data;
+  },
+
+  // 获取下载URL
+  getDownloadUrl: (bookId: number, filename: string): string => {
+    return `/api/v1/download/${bookId}/${filename}`;
   }
 };
 

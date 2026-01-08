@@ -14,7 +14,7 @@ interface BookViewerProps {
 }
 
 export const BookViewer: React.FC<BookViewerProps> = ({ bookId }) => {
-  const { currentBook, fetchBook, updatePage, regenerateImage, isLoading } = useBookStore();
+  const { currentBook, updatePage, regenerateImage, isLoading, startPolling, stopPolling, connectWebSocket, disconnectWebSocket } = useBookStore();
   const [currentPage, setCurrentPage] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
@@ -22,8 +22,16 @@ export const BookViewer: React.FC<BookViewerProps> = ({ bookId }) => {
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
-    fetchBook(bookId);
-  }, [bookId]);
+    // 启动轮询和WebSocket连接
+    startPolling(bookId);
+    connectWebSocket(bookId);
+
+    // 组件卸载时停止
+    return () => {
+      stopPolling();
+      disconnectWebSocket();
+    };
+  }, [bookId, startPolling, stopPolling, connectWebSocket, disconnectWebSocket]);
 
   useEffect(() => {
     if (currentBook?.pages[currentPage]) {
@@ -41,6 +49,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({ bookId }) => {
 
   const totalPages = currentBook.pages.length;
   const page = currentBook.pages[currentPage];
+  const showProgressIndicator = currentBook.status === 'generating';
 
   const handlePrevPage = () => {
     setCurrentPage(Math.max(0, currentPage - 1));
@@ -69,20 +78,42 @@ export const BookViewer: React.FC<BookViewerProps> = ({ bookId }) => {
 
   const handleExport = async (format: string) => {
     try {
-      toast.loading('正在导出...');
+      toast.loading('正在导出，请稍候...');
       const result = await bookApi.export(bookId, format, 'high');
       toast.dismiss();
-      toast.success('导出成功');
-      // 下载文件
-      window.open(result.download_url, '_blank');
-    } catch (error) {
+      toast.success('导出成功！');
+
+      // 构建下载URL
+      const downloadUrl = bookApi.getDownloadUrl(result.book_id, result.filename);
+
+      // 创建隐藏的a标签来触发下载
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error: any) {
       toast.dismiss();
-      toast.error('导出失败');
+      toast.error(error.response?.data?.detail || '导出失败，请重试');
     }
   };
 
   return (
     <div className="max-w-6xl mx-auto p-4">
+      {/* 进度提示 */}
+      {showProgressIndicator && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent" />
+          <div className="flex-1">
+            <p className="text-blue-800 font-medium">绘本正在生成中...</p>
+            <p className="text-blue-600 text-sm">
+              已完成 {currentBook.pages.filter(p => p.image_url).length} / {currentBook.pages.length} 页
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* 工具栏 */}
       <div className="flex items-center justify-between mb-4 bg-white rounded-lg shadow p-3">
         <div className="flex items-center gap-4">
@@ -179,8 +210,15 @@ export const BookViewer: React.FC<BookViewerProps> = ({ bookId }) => {
                   </button>
                 </div>
               ) : (
-                <div className="w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center">
-                  <span className="text-gray-400">图片生成中...</span>
+                <div className="w-full h-64 bg-gray-200 rounded-lg flex flex-col items-center justify-center">
+                  {currentBook.status === 'generating' ? (
+                    <>
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-500 border-t-transparent mb-3" />
+                      <span className="text-gray-500 text-sm">AI正在绘制中...</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">图片生成中...</span>
+                  )}
                 </div>
               )}
             </div>
