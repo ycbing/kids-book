@@ -17,18 +17,46 @@ from app.config import settings
 from app.models.schemas import BookResponse, PageContent
 
 class ExportService:
-    
+
     def __init__(self):
         self.output_dir = Path(settings.OUTPUT_DIR)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 注册中文字体
-        font_path = Path(__file__).parent.parent / "assets" / "fonts" / "SimHei.ttf"
-        if font_path.exists():
-            pdfmetrics.registerFont(TTFont('SimHei', str(font_path)))
-            self.chinese_font = 'SimHei'
-        else:
-            self.chinese_font = 'Helvetica'
+
+        # 注册中文字体 - 尝试多个可能的字体位置
+        self.chinese_font = self._register_chinese_font()
+
+    def _register_chinese_font(self) -> str:
+        """注册中文字体，返回字体名称"""
+        # 可能的字体路径
+        font_paths = [
+            Path(__file__).parent.parent / "assets" / "fonts" / "SimHei.ttf",
+            Path(__file__).parent.parent / "assets" / "fonts" / "msyh.ttc",  # 微软雅黑
+            Path(__file__).parent.parent / "assets" / "fonts" / "simsun.ttc",  # 宋体
+            # Windows系统字体
+            Path("C:/Windows/Fonts/msyh.ttc"),
+            Path("C:/Windows/Fonts/simsun.ttc"),
+            Path("C:/Windows/Fonts/simhei.ttf"),
+            # Linux系统字体
+            Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            # macOS系统字体
+            Path("/System/Library/Fonts/PingFang.ttc"),
+            Path("/System/Library/Fonts/STHeiti Light.ttc"),
+        ]
+
+        for font_path in font_paths:
+            if font_path.exists():
+                try:
+                    font_name = f"ChineseFont_{font_path.stem}"
+                    pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
+                    print(f"✅ 成功加载中文字体: {font_path}")
+                    return font_name
+                except Exception as e:
+                    print(f"⚠️ 无法加载字体 {font_path}: {e}")
+                    continue
+
+        print("⚠️ 警告: 未找到中文字体，PDF中文可能显示异常")
+        return 'Helvetica'
     
     async def download_image(self, url: str) -> Optional[bytes]:
         """下载图片"""

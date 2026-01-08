@@ -10,6 +10,7 @@ from app.models.schemas import (
     StoryGenerateRequest, ArtStyle
 )
 from app.services.ai_service import ai_service
+from app.core.exceptions import NotFoundException, ExternalServiceException, not_found
 
 class BookService:
     
@@ -42,23 +43,35 @@ class BookService:
         db: Session,
         book_id: int,
         request: BookCreateRequest,
-        progress_callback=None
+        progress_callback=None,
+        ws_manager=None
     ) -> PictureBook:
         """生成绘本内容（故事+配图）"""
-        
+
         book = db.query(PictureBook).filter(PictureBook.id == book_id).first()
         if not book:
-            raise ValueError("绘本不存在")
-        
+            raise not_found("绘本", book_id)
+
         try:
             # 更新状态为生成中
             book.status = BookStatus.GENERATING
             db.commit()
-            
+
+            # 通知WebSocket：开始生成
+            if ws_manager:
+                await ws_manager.send_progress(str(book_id), {
+                    "type": "status_update",
+                    "book_id": book_id,
+                    "status": "generating",
+                    "stage": "初始化",
+                    "completed_pages": 0,
+                    "total_pages": request.page_count
+                })
+
             # 1. 生成故事
             if progress_callback:
                 await progress_callback("generating_story", 0, 100)
-            
+
             story_request = StoryGenerateRequest(
                 theme=request.theme,
                 keywords=request.keywords,
@@ -66,29 +79,40 @@ class BookService:
                 page_count=request.page_count,
                 custom_prompt=request.custom_prompt
             )
-            
+
             story = await ai_service.generate_story(story_request)
-            
+
             # 更新绘本信息
             book.title = request.title or story.title
             book.description = story.description
             db.commit()
-            
+
             if progress_callback:
                 await progress_callback("generating_story", 100, 100)
-            
+
             # 2. 生成配图
             async def image_progress(current, total):
                 if progress_callback:
                     progress = int((current / total) * 100)
                     await progress_callback("generating_images", progress, 100)
-            
+
+                # 通知WebSocket：图片生成进度
+                if ws_manager:
+                    await ws_manager.send_progress(str(book_id), {
+                        "type": "image_progress",
+                        "book_id": book_id,
+                        "stage": "generating_images",
+                        "completed_pages": current,
+                        "total_pages": total,
+                        "progress": int((current / total) * 100)
+                    })
+
             image_urls = await ai_service.generate_book_images(
                 story.pages,
                 request.style,
                 image_progress
             )
-            
+
             # 3. 保存页面内容
             for i, page in enumerate(story.pages):
                 book_page = BookPage(
@@ -100,20 +124,48 @@ class BookService:
                     layout={"type": "standard"}
                 )
                 db.add(book_page)
-            
+
+                # 每保存一页就通知一次
+                db.commit()
+                if ws_manager and i < len(image_urls) and image_urls[i]:
+                    await ws_manager.send_progress(str(book_id), {
+                        "type": "page_completed",
+                        "book_id": book_id,
+                        "page_number": page.page_number,
+                        "image_url": image_urls[i]
+                    })
+
             # 设置封面（使用第一页图片）
             if image_urls and image_urls[0]:
                 book.cover_image = image_urls[0]
-            
+
             book.status = BookStatus.COMPLETED
             db.commit()
             db.refresh(book)
-            
+
+            # 通知WebSocket：生成完成
+            if ws_manager:
+                await ws_manager.send_progress(str(book_id), {
+                    "type": "generation_completed",
+                    "book_id": book_id,
+                    "status": "completed"
+                })
+
             return book
-            
+
         except Exception as e:
             book.status = BookStatus.FAILED
             db.commit()
+
+            # 通知WebSocket：生成失败
+            if ws_manager:
+                await ws_manager.send_progress(str(book_id), {
+                    "type": "generation_failed",
+                    "book_id": book_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+
             raise e
     
     def get_book(self, db: Session, book_id: int) -> Optional[BookResponse]:
@@ -192,9 +244,9 @@ class BookService:
             BookPage.book_id == book_id,
             BookPage.page_number == page_number
         ).first()
-        
+
         if not page:
-            raise ValueError("页面不存在")
+            raise not_found("绘本页面", f"book_id={book_id}, page_number={page_number}")
         
         if text_content is not None:
             page.text_content = text_content

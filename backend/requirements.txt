@@ -12,3 +12,12 @@ python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 redis>=5.0.1
 celery>=5.3.4
+bcrypt>=4.0.1
+
+# PostgreSQL数据库驱动
+psycopg2-binary>=2.9.7
+# 异步PostgreSQL支持（可选，用于async/await）
+asyncpg>=0.29.0
+
+# 数据库迁移工具
+alembic>=1.12.0

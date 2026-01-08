@@ -85,3 +85,32 @@ class ExportRequest(BaseModel):
     book_id: int
     format: str = Field(default="pdf", pattern="^(pdf|png|jpg)$")
     quality: str = Field(default="high", pattern="^(low|medium|high)$")
+
+# ==================== 认证相关模型 ====================
+
+# 用户注册请求
+class UserRegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50, description="用户名")
+    email: str = Field(..., description="邮箱地址")
+    password: str = Field(..., min_length=6, max_length=100, description="密码")
+
+# 用户登录请求
+class UserLoginRequest(BaseModel):
+    username: str = Field(..., description="用户名")
+    password: str = Field(..., description="密码")
+
+# 用户响应
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Token响应
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
