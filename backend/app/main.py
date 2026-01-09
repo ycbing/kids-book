@@ -26,13 +26,47 @@ async def lifespan(app: FastAPI):
     logger.info("AI绘本创作平台 - 后端服务启动")
     logger.info(f"启动时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*60)
+
+    # 配置验证
+    logger.info("🔍 验证环境配置...")
+    try:
+        # 开发环境跳过连接测试，生产环境必须验证
+        skip_connection_tests = settings.DEBUG
+
+        validation_passed = await settings.validate(
+            skip_connection_tests=skip_connection_tests
+        )
+
+        if not validation_passed:
+            logger.error("❌ 配置验证失败，服务启动终止")
+            raise SystemExit(1)
+
+    except SystemExit as e:
+        # 配置验证失败，退出
+        raise
+    except Exception as e:
+        logger.error(f"❌ 配置验证过程中发生错误: {str(e)}")
+        if not settings.DEBUG:
+            # 生产环境配置验证失败时退出
+            raise SystemExit(1)
+        else:
+            # 开发环境记录警告但继续启动
+            logger.warning("⚠️  开发环境：配置验证失败但继续启动")
+
+    # 创建数据库表
+    logger.info("🗄️  初始化数据库...")
     Base.metadata.create_all(bind=engine)
+    logger.info("✅ 数据库初始化完成")
+
+    logger.info("="*60)
+    logger.info("✅ 服务启动成功，准备接收请求")
+    logger.info("="*60)
 
     yield
 
     # 关闭时执行
     logger.info("="*60)
-    logger.info("后端服务关闭")
+    logger.info("🛑 后端服务关闭")
     logger.info("="*60)
 
 app = FastAPI(

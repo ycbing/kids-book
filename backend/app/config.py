@@ -131,6 +131,19 @@ class Settings(BaseSettings):
         model = self.IMAGE_MODEL
         return api_key, base_url, model
 
+    async def validate(self, skip_connection_tests: bool = False) -> bool:
+        """
+        验证配置
+
+        Args:
+            skip_connection_tests: 是否跳过连接测试
+
+        Returns:
+            bool: 验证是否通过
+        """
+        from app.core.validator import validate_config
+        return await validate_config(self, skip_connection_tests=skip_connection_tests)
+
     @property
     def allowed_origins_list(self) -> list:
         """获取CORS允许的域名列表"""
