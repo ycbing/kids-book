@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import os
 import logging
+import uuid
 from datetime import datetime
 
 from app.config import settings
@@ -13,17 +14,10 @@ from app.api.routes import router
 from app.api.auth import router as auth_router
 from app.models.database import Base, engine
 from app.core.exceptions import AppException
+from app.core.logging import setup_logging, request_logger, error_logger
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # 输出到控制台
-        logging.FileHandler('backend.log', encoding='utf-8')  # 输出到文件
-    ]
-)
-logger = logging.getLogger(__name__)
+# 配置结构化日志系统
+logger = setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,33 +42,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 请求日志中间件
+# 请求日志中间件 - 添加请求ID追踪
 @app.middleware("http")
-async def log_requests(request, call_next):
-    """记录所有HTTP请求和响应"""
+async def log_requests(request: Request, call_next):
+    """
+    请求日志中间件 - 为每个请求生成唯一ID并记录详细信息
+    """
+    # 生成唯一的请求ID
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+
+    # 获取用户ID（如果有）
+    user_id = getattr(request.state, "user_id", None)
+
+    # 记录请求开始时间
     start_time = datetime.now()
-
-    # 记录请求信息
-    logger.info("\n" + "="*60)
-    logger.info(f"📥 收到请求")
-    logger.info(f"方法: {request.method}")
-    logger.info(f"路径: {request.url.path}")
-    logger.info(f"完整URL: {str(request.url)}")
-    logger.info(f"客户端: {request.client.host if request.client else 'unknown'}")
-
-    # 读取请求体（如果是POST/PUT/PATCH）
-    if request.method in ["POST", "PUT", "PATCH"]:
-        try:
-            body = await request.body()
-            if body:
-                import json
-                try:
-                    body_json = json.loads(body.decode())
-                    logger.info(f"请求体: {json.dumps(body_json, ensure_ascii=False, indent=2)}")
-                except:
-                    logger.info(f"请求体: {body.decode()[:500]}")
-        except Exception as e:
-            logger.warning(f"无法读取请求体: {e}")
 
     # 处理请求
     try:
@@ -83,24 +65,38 @@ async def log_requests(request, call_next):
         # 计算处理时间
         process_time = (datetime.now() - start_time).total_seconds()
 
-        # 记录响应信息
-        logger.info(f"📤 发送响应")
-        logger.info(f"状态码: {response.status_code}")
-        logger.info(f"处理时间: {process_time:.3f}秒")
+        # 记录请求日志（使用结构化日志）
+        request_logger.log_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration=process_time,
+            client_ip=request.client.host if request.client else None,
+            user_id=user_id,
+            request_id=request_id
+        )
 
-        # 添加处理时间到响应头
+        # 添加请求ID和处理时间到响应头
+        response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = str(process_time)
 
-        logger.info("="*60 + "\n")
-
         return response
+
     except Exception as e:
-        # 记录错误
+        # 计算处理时间
         process_time = (datetime.now() - start_time).total_seconds()
-        logger.error(f"❌ 请求处理失败")
-        logger.error(f"错误信息: {str(e)}")
-        logger.error(f"处理时间: {process_time:.3f}秒")
-        logger.error("="*60 + "\n")
+
+        # 记录错误
+        error_logger.log_error(
+            error=e,
+            context={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "duration": process_time,
+                "client_ip": request.client.host if request.client else None
+            }
+        )
         raise
 
 # CORS配置 - 安全的跨域资源共享设置
