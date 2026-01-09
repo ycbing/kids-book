@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { Book, BookCreateRequest, bookApi } from '../services/api';
 import { websocketService, WebSocketMessage } from '../services/websocket';
+import { useUIStore } from './uiStore';
 
 interface BookState {
   // 数据状态
