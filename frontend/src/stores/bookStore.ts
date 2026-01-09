@@ -4,9 +4,11 @@ import { Book, BookCreateRequest, bookApi } from '../services/api';
 import { websocketService, WebSocketMessage } from '../services/websocket';
 
 interface BookState {
-  // 状态
+  // 数据状态
   books: Book[];
   currentBook: Book | null;
+
+  // UI状态
   isLoading: boolean;
   isGenerating: boolean;
   generationProgress: {
@@ -14,8 +16,12 @@ interface BookState {
     progress: number;
   };
   error: string | null;
-  pollingInterval: ReturnType<typeof setInterval> | null;
+  wsStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+
+  // WebSocket管理
   websocketUnsubscribe: (() => void) | null;
+  pollingInterval: ReturnType<typeof setInterval> | null;
+  usePollingFallback: boolean;
 
   // 动作
   fetchBooks: () => Promise<void>;
@@ -26,22 +32,29 @@ interface BookState {
   regenerateImage: (bookId: number, pageNumber: number) => Promise<void>;
   setGenerationProgress: (stage: string, progress: number) => void;
   clearError: () => void;
-  startPolling: (bookId: number) => void;
-  stopPolling: () => void;
+
+  // WebSocket相关
   connectWebSocket: (bookId: number) => void;
   disconnectWebSocket: () => void;
   handleWebSocketMessage: (message: WebSocketMessage) => void;
+  startPollingFallback: (bookId: number) => void;
+  stopPollingFallback: () => void;
 }
 
 export const useBookStore = create<BookState>((set, get) => ({
+  // 初始状态
   books: [],
   currentBook: null,
   isLoading: false,
   isGenerating: false,
   generationProgress: { stage: '', progress: 0 },
   error: null,
-  pollingInterval: null,
+  wsStatus: 'disconnected',
   websocketUnsubscribe: null,
+  pollingInterval: null,
+  usePollingFallback: false,
+
+  // ========== 数据操作 ==========
 
   fetchBooks: async () => {
     set({ isLoading: true, error: null });
@@ -58,20 +71,34 @@ export const useBookStore = create<BookState>((set, get) => ({
     try {
       const book = await bookApi.get(id);
       set({ currentBook: book, isLoading: false });
+
+      // 如果正在生成，连接WebSocket
+      if (book.status === 'generating' && !get().usePollingFallback) {
+        get().connectWebSocket(id);
+      }
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
   },
 
   createBook: async (data: BookCreateRequest) => {
-    set({ isGenerating: true, error: null, generationProgress: { stage: '初始化', progress: 0 } });
+    set({
+      isGenerating: true,
+      error: null,
+      generationProgress: { stage: '初始化', progress: 0 },
+      usePollingFallback: false
+    };
+
     try {
       const book = await bookApi.create(data);
       set((state) => ({
         books: [book, ...state.books],
-        currentBook: book,
-        isGenerating: false
+        currentBook: book
       }));
+
+      // 连接WebSocket以获取实时进度
+      get().connectWebSocket(book.id);
+
       return book;
     } catch (error: any) {
       set({ error: error.message, isGenerating: false });
@@ -126,47 +153,34 @@ export const useBookStore = create<BookState>((set, get) => ({
     }
   },
 
+  // ========== 状态管理 ==========
+
   setGenerationProgress: (stage: string, progress: number) => {
     set({ generationProgress: { stage, progress } });
   },
 
   clearError: () => set({ error: null }),
 
-  startPolling: (bookId: number) => {
-    // 清除旧的轮询
-    if (get().pollingInterval) {
-      get().stopPolling();
-    }
-
-    // 立即获取一次
-    get().fetchBook(bookId);
-
-    // 每3秒轮询一次
-    const interval = setInterval(async () => {
-      const state = get();
-      if (state.currentBook?.status === 'completed' || state.currentBook?.status === 'failed') {
-        // 生成完成或失败，停止轮询
-        get().stopPolling();
-      } else {
-        // 继续轮询
-        await get().fetchBook(bookId);
-      }
-    }, 3000);
-
-    set({ pollingInterval: interval });
-  },
-
-  stopPolling: () => {
-    const { pollingInterval } = get();
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      set({ pollingInterval: null });
-    }
-  },
+  // ========== WebSocket管理 ==========
 
   connectWebSocket: (bookId: number) => {
-    // 先断开旧连接
+    // 先断开旧连接和轮询
     get().disconnectWebSocket();
+    get().stopPollingFallback();
+
+    // 设置WebSocket连接失败回调
+    websocketService.setConnectionLostCallback((failedBookId) => {
+      if (failedBookId === bookId) {
+        console.log('⚠️  WebSocket连接失败，切换到轮询模式');
+        set({ usePollingFallback: true });
+        get().startPollingFallback(bookId);
+      }
+    });
+
+    // 监听连接状态
+    websocketService.onStatusChange((status) => {
+      set({ wsStatus: status });
+    });
 
     // 连接WebSocket
     websocketService.connect(bookId);
@@ -180,16 +194,31 @@ export const useBookStore = create<BookState>((set, get) => ({
   },
 
   disconnectWebSocket: () => {
-    const { websocketUnsubscribe } = get();
+    const { websocketUnsubscribe, pollingInterval } = get();
+
+    // 取消WebSocket订阅
     if (websocketUnsubscribe) {
       websocketUnsubscribe();
       set({ websocketUnsubscribe: null });
     }
+
+    // 断开WebSocket
     websocketService.disconnect();
+
+    // 停止轮询
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      set({ pollingInterval: null });
+    }
+
+    set({
+      wsStatus: 'disconnected',
+      usePollingFallback: false
+    });
   },
 
   handleWebSocketMessage: (message: WebSocketMessage) => {
-    console.log('Received WebSocket message:', message);
+    console.log('📨 Received WebSocket message:', message.type);
 
     switch (message.type) {
       case 'page_completed':
@@ -212,16 +241,18 @@ export const useBookStore = create<BookState>((set, get) => ({
         break;
 
       case 'generation_completed':
-        // 生成完成，停止轮询
-        get().stopPolling();
+        // 生成完成，重新获取完整数据
         get().fetchBook(message.book_id);
+        set({ isGenerating: false });
         break;
 
       case 'generation_failed':
         // 生成失败
-        get().stopPolling();
         get().fetchBook(message.book_id);
-        set({ error: message.error || '生成失败' });
+        set({
+          isGenerating: false,
+          error: message.error || '生成失败'
+        });
         break;
 
       case 'image_progress':
@@ -238,15 +269,61 @@ export const useBookStore = create<BookState>((set, get) => ({
 
       case 'status_update':
         // 状态更新
-        if (message.status) {
-          set({
-            generationProgress: {
-              stage: message.stage || '初始化',
-              progress: 0
-            }
-          });
-        }
+        set({
+          generationProgress: {
+            stage: message.stage || '初始化',
+            progress: 0
+          }
+        });
         break;
     }
-  }
+  },
+
+  // ========== 轮询降级方案 ==========
+
+  startPollingFallback: (bookId: number) => {
+    // 清除旧的轮询
+    const { pollingInterval } = get();
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    console.log('🔄 Starting polling fallback for book:', bookId);
+
+    // 立即获取一次
+    get().fetchBook(bookId);
+
+    // 每3秒轮询一次
+    const interval = setInterval(async () => {
+      const state = get();
+
+      // 检查是否应该停止轮询
+      if (!state.usePollingFallback ||
+          !state.currentBook ||
+          state.currentBook.id !== bookId) {
+        get().stopPollingFallback();
+        return;
+      }
+
+      // 如果生成完成或失败，停止轮询
+      if (state.currentBook.status === 'completed' ||
+          state.currentBook.status === 'failed') {
+        get().stopPollingFallback();
+        return;
+      }
+
+      // 继续轮询
+      await get().fetchBook(bookId);
+    }, 3000);
+
+    set({ pollingInterval: interval });
+  },
+
+  stopPollingFallback: () => {
+    const { pollingInterval } = get();
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      set({ pollingInterval: null });
+    }
+  },
 }));

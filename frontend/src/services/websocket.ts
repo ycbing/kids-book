@@ -14,14 +14,23 @@ export interface WebSocketMessage {
 }
 
 export type WebSocketCallback = (message: WebSocketMessage) => void;
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
 
 class WebSocketService {
   private ws: WebSocket | null = null;
   private callbacks: Set<WebSocketCallback> = new Set();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 3000;
+  private maxReconnectAttempts = 10;
+  private baseReconnectDelay = 1000;
+  private maxReconnectDelay = 30000;
   private bookId: number | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private statusListeners: Set<(status: ConnectionStatus) => void> = new Set();
+  private currentStatus: ConnectionStatus = 'disconnected';
+
+  // 降级到轮询模式的回调
+  private onConnectionLost: ((bookId: number) => void) | null = null;
 
   connect(bookId: number) {
     // 如果已经连接到同一个book，不重新连接
@@ -33,14 +42,18 @@ class WebSocketService {
     this.disconnect();
 
     this.bookId = bookId;
-    const wsUrl = `ws://localhost:8000/api/v1/ws/book-${bookId}`;
+    this.updateStatus('connecting');
+
+    const wsUrl = `ws://localhost:8000/api/v1/ws/${bookId}`;
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected for book:', bookId);
+        console.log('✅ WebSocket connected for book:', bookId);
         this.reconnectAttempts = 0;
+        this.updateStatus('connected');
+        this.startHeartbeat();
       };
 
       this.ws.onmessage = (event) => {
@@ -56,34 +69,103 @@ class WebSocketService {
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('❌ WebSocket error:', error);
+        this.updateStatus('failed');
       };
 
-      this.ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      this.ws.onclose = (event) => {
+        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
+        this.stopHeartbeat();
+        this.updateStatus('disconnected');
+
         // 尝试重连
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.reconnectAttempts++;
-          console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
-          setTimeout(() => {
-            if (this.bookId) {
-              this.connect(this.bookId);
-            }
-          }, this.reconnectDelay);
-        }
+        this.attemptReconnect(bookId);
       };
     } catch (error) {
       console.error('Failed to create WebSocket connection:', error);
+      this.updateStatus('failed');
+      // 降级到轮询模式
+      this.fallbackToPolling(bookId);
+    }
+  }
+
+  private attemptReconnect(bookId: number) {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = Math.min(
+        this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+        this.maxReconnectDelay
+      );
+
+      console.log(
+        `🔄 Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+      );
+      console.log(`   Next attempt in ${delay}ms`);
+
+      this.updateStatus('reconnecting');
+
+      this.reconnectTimer = setTimeout(() => {
+        if (this.bookId === bookId) {
+          this.connect(bookId);
+        }
+      }, delay);
+    } else {
+      console.error('❌ Max reconnection attempts reached. Falling back to polling.');
+      this.updateStatus('failed');
+      // 降级到轮询模式
+      this.fallbackToPolling(bookId);
+    }
+  }
+
+  private fallbackToPolling(bookId: number) {
+    console.log('⚠️  Falling back to polling mode for book:', bookId);
+    if (this.onConnectionLost) {
+      this.onConnectionLost(bookId);
+    }
+  }
+
+  private startHeartbeat() {
+    // 每30秒发送一次心跳
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping', book_id: this.bookId }));
+      } else {
+        this.stopHeartbeat();
+      }
+    }, 30000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private updateStatus(status: ConnectionStatus) {
+    if (this.currentStatus !== status) {
+      this.currentStatus = status;
+      this.statusListeners.forEach(listener => listener(status));
+      console.log(`📡 WebSocket status: ${status}`);
     }
   }
 
   disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    this.stopHeartbeat();
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+
     this.bookId = null;
     this.reconnectAttempts = 0;
+    this.updateStatus('disconnected');
   }
 
   subscribe(callback: WebSocketCallback) {
@@ -93,8 +175,23 @@ class WebSocketService {
     };
   }
 
+  onStatusChange(callback: (status: ConnectionStatus) => void) {
+    this.statusListeners.add(callback);
+    return () => {
+      this.statusListeners.delete(callback);
+    };
+  }
+
+  setConnectionLostCallback(callback: (bookId: number) => void) {
+    this.onConnectionLost = callback;
+  }
+
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  getStatus(): ConnectionStatus {
+    return this.currentStatus;
   }
 }
 
