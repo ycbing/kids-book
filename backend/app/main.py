@@ -12,6 +12,7 @@ from datetime import datetime
 from app.config import settings
 from app.api.routes import router
 from app.api.auth import router as auth_router
+from app.api.health import router as health_router
 from app.models.database import Base, engine
 from app.core.exceptions import AppException
 from app.core.logging import setup_logging, request_logger, error_logger
@@ -232,6 +233,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 # 注册路由
+app.include_router(health_router, tags=["健康检查"])  # 健康检查路由（无前缀）
 app.include_router(auth_router, prefix=settings.API_PREFIX)  # 认证路由
 app.include_router(router, prefix=settings.API_PREFIX)  # 业务路由
 
@@ -240,12 +242,9 @@ async def root():
     return {
         "message": "欢迎使用AI绘本创作平台",
         "docs": "/docs",
+        "health": "/health",
         "version": "1.0.0"
     }
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
