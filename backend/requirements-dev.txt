@@ -1,0 +1,23 @@
+# 开发和测试依赖
+# 使用方法: pip install -r requirements-dev.txt
+
+# 测试框架
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# 测试工具
+httpx>=0.25.2  # 测试FastAPI
+faker>=20.1.0  # 生成测试数据
+freezegun>=1.4.0  # 时间Mock
+
+# 代码质量
+black>=23.12.1
+flake8>=6.1.0
+mypy>=1.7.1
+isort>=5.13.2
+
+# 文档
+sphinx>=7.2.6
+sphinx-rtd-theme>=2.0.0
