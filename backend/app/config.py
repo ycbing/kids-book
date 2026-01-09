@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     API_BACKUP_BASE_URL: Optional[str] = None  # 备用API地址
     API_ENABLE_FALLBACK: bool = True  # 是否启用备用地址
 
+    # CDN配置（可选，用于静态资源分发）
+    CDN_DOMAIN: Optional[str] = None  # CDN域名，如: https://cdn.yourdomain.com
+    USE_CDN: bool = False  # 是否启用CDN
+
     class Config:
         env_file = ".env"
 
@@ -154,5 +158,21 @@ class Settings(BaseSettings):
         origins = [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
         # 过滤空字符串
         return [origin for origin in origins if origin]
+
+    def get_cdn_url(self, path: str) -> str:
+        """
+        获取资源的CDN URL
+
+        Args:
+            path: 资源路径（如: /uploads/image.jpg）
+
+        Returns:
+            完整的CDN URL或本地路径
+        """
+        if self.USE_CDN and self.CDN_DOMAIN:
+            # 移除路径开头的斜杠
+            clean_path = path.lstrip('/')
+            return f"{self.CDN_DOMAIN}/{clean_path}"
+        return path
 
 settings = Settings()

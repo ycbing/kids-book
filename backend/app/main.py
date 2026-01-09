@@ -1,6 +1,7 @@
 # backend/app/main.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -181,6 +182,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],  # 明确允许的方法
     allow_headers=["Content-Type", "Authorization", "X-Request-ID"],  # 明确允许的请求头
 )
+
+# 响应压缩中间件 - GZip压缩（最小1000字节）
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # 创建必要的目录
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
