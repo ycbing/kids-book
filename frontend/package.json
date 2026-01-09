@@ -40,6 +40,18 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "依赖管理": "npm run audit:fix && npm run deps:update",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix",
+    "audit:strict": "npm audit --audit-level=moderate",
+    "outdated": "npm outdated",
+    "update": "npm update",
+    "deps:update": "npm update && npm run audit:fix",
+    "check:updates": "npx npm-check-updates -u"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }

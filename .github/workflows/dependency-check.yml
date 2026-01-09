@@ -1,0 +1,263 @@
+name: Dependency Security Check
+
+on:
+  # 每周日UTC 00:00运行
+  schedule:
+    - cron: '0 0 * * 0'
+
+  # 手动触发
+  workflow_dispatch:
+
+  # PR触发
+  pull_request:
+    paths:
+      - 'backend/requirements.txt'
+      - 'backend/requirements.lock'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+
+jobs:
+  python-security:
+    name: Python依赖安全检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 设置Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 安装依赖
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: 🔒 安装Safety
+        run: pip install safety
+
+      - name: 🛡️ 运行安全检查
+        run: |
+          cd backend
+          # 检查已知的安全漏洞
+          safety check --json --output safety-report.json || true
+
+          # 显示报告
+          if [ -f safety-report.json ]; then
+            echo "## Safety安全检查报告" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat safety-report.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # 检查是否有严重漏洞
+          safety check --continue-on-error
+        continue-on-error: true
+
+      - name: 📊 生成依赖报告
+        run: |
+          cd backend
+          pip install pip-audit
+
+          # 运行pip-audit
+          pip-audit --format json --output pip-audit-report.json || true
+
+          # 显示结果
+          if [ -f pip-audit-report.json ]; then
+            echo "## pip-audit报告" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat pip-audit-report.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+        continue-on-error: true
+
+      - name: 🔍 检查依赖版本一致性
+        run: |
+          cd backend
+
+          echo "## 依赖版本检查" >> $GITHUB_STEP_SUMMARY
+
+          # 检查requirements.txt和requirements.lock的一致性
+          python3 -c "
+          import re
+          from pathlib import Path
+
+          # 读取requirements.txt
+          req_txt = Path('requirements.txt').read_text()
+          req_lock = Path('requirements.lock').read_text() if Path('requirements.lock').exists() else ''
+
+          # 提取包名
+          packages = set(re.findall(r'^([a-zA-Z0-9_-]+)', req_txt, re.MULTILINE))
+          packages.discard('AI')
+
+          print(f'### 包统计')
+          print(f'- requirements.txt中定义的包: {len(packages)}')
+
+          if req_lock:
+              locked_packages = set(re.findall(r'^([a-zA-Z0-9_-]+)==', req_lock, re.MULTILINE))
+              print(f'- requirements.lock中锁定的包: {len(locked_packages)}')
+              print(f'- 总锁定包（含依赖）: {len([line for line in req_lock.split(\"\\n\") if \"==\" in line])}')
+          else:
+              print('- ⚠️ requirements.lock不存在')
+          "
+
+      - name: 📤 上传检查报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-security-reports
+          path: |
+            backend/safety-report.json
+            backend/pip-audit-report.json
+          retention-days: 30
+
+  node-security:
+    name: Node依赖安全检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🟢 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📦 安装依赖
+        run: |
+          cd frontend
+          npm ci
+
+      - name: 🔒 运行安全审计
+        run: |
+          cd frontend
+
+          echo "## npm audit报告" >> $GITHUB_STEP_SUMMARY
+
+          # 生成审计报告
+          npm audit --json > npm-audit-report.json || true
+
+          # 显示高危漏洞数量
+          if [ -f npm-audit-report.json ]; then
+            VULN_HIGH=$(cat npm-audit-report.json | jq -r '.metadata.vulnerabilities.high // 0')
+            VULN_CRITICAL=$(cat npm-audit-report.json | jq -r '.metadata.vulnerabilities.critical // 0')
+
+            echo "### 漏洞统计" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔴 高危: $VULN_HIGH" >> $GITHUB_STEP_SUMMARY
+            echo "- 🚨 严重: $VULN_CRITICAL" >> $GITHUB_STEP_SUMMARY
+
+            # 如果有高危或严重漏洞，显示详情
+            if [ "$VULN_HIGH" -gt 0 ] || [ "$VULN_CRITICAL" -gt 0 ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 漏洞详情" >> $GITHUB_STEP_SUMMARY
+              npm audit --audit-level=high >> $GITHUB_STEP_SUMMARY || true
+            else
+              echo "### ✅ 未发现高危或严重漏洞" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          # 尝试自动修复
+          echo "### 自动修复尝试" >> $GITHUB_STEP_SUMMARY
+          npm audit fix --dry-run >> $GITHUB_STEP_SUMMARY || true
+        continue-on-error: true
+
+      - name: 🔍 检查过时的依赖
+        run: |
+          cd frontend
+
+          echo "## 过时的依赖" >> $GITHUB_STEP_SUMMARY
+          npm outdated --json > npm-outdated.json || true
+
+          if [ -s npm-outdated.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat npm-outdated.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ 所有依赖都是最新版本" >> $GITHUB_STEP_SUMMARY
+          fi
+        continue-on-error: true
+
+      - name: 📊 依赖统计
+        run: |
+          cd frontend
+
+          echo "## 依赖统计" >> $GITHUB_STEP_SUMMARY
+
+          # 统计dependencies数量
+          DEPS_COUNT=$(cat package.json | jq '.dependencies | length')
+          DEV_DEPS_COUNT=$(cat package.json | jq '.devDependencies | length')
+
+          echo "- 依赖: $DEPS_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- 开发依赖: $DEV_DEPS_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- 总计: $((DEPS_COUNT + DEV_DEPS_COUNT))" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📤 上传检查报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: node-security-reports
+          path: |
+            frontend/npm-audit-report.json
+            frontend/npm-outdated.json
+          retention-days: 30
+
+  version-check:
+    name: 依赖版本一致性检查
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 检查Python依赖变化
+        run: |
+          cd backend
+
+          echo "## Python依赖变化" >> $GITHUB_STEP_SUMMARY
+
+          # 获取变更的文件
+          git diff origin/${{ github.base_ref }} HEAD -- requirements.txt requirements.lock > /dev/null 2>&1 || true
+
+          # 如果requirements.lock变化了但requirements.txt没变，给出警告
+          if git diff origin/${{ github.base_ref }} HEAD -- requirements.lock | grep -q .; then
+            if ! git diff origin/${{ github.base_ref }} HEAD -- requirements.txt | grep -q .; then
+              echo "⚠️ **警告**: requirements.lock发生变化但requirements.txt未变" >> $GITHUB_STEP_SUMMARY
+              echo "这可能是意外提交，请确认是否为预期更改" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: 🔍 检查Node依赖变化
+        run: |
+          cd frontend
+
+          echo "## Node依赖变化" >> $GITHUB_STEP_SUMMARY
+
+          # 检查package-lock.json
+          if git diff origin/${{ github.base_ref }} HEAD -- package-lock.json | grep -q .; then
+            if ! git diff origin/${{ github.base_ref }} HEAD -- package.json | grep -q .; then
+              echo "⚠️ **警告**: package-lock.json发生变化但package.json未变" >> $GITHUB_STEP_SUMMARY
+              echo "这可能是意外提交，请确认是否为预期更改" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: 💡 建议
+        run: |
+          echo "## 💡 依赖管理建议" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Python后端" >> $GITHUB_STEP_SUMMARY
+          echo "- 定期运行: \`pip install -r requirements.txt --upgrade\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 更新锁定文件: \`python scripts/lock_requirements.py --update\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Node前端" >> $GITHUB_STEP_SUMMARY
+          echo "- 检查更新: \`npm run check:updates\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 安全审计: \`npm audit\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 更新依赖: \`npm run deps:update\`" >> $GITHUB_STEP_SUMMARY
