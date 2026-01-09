@@ -1,5 +1,6 @@
 // frontend/src/services/api.ts
 import axios from 'axios';
+import { handleError } from '../utils/errorHandler';
 
 // 开发环境使用代理，生产环境使用完整URL
 const API_BASE_URL = '/api/v1';
@@ -8,6 +9,66 @@ const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 120000, // 2分钟超时（AI生成需要时间）
 });
+
+// 请求拦截器
+api.interceptors.request.use(
+  (config) => {
+    // 添加请求时间戳
+    config.metadata = { startTime: new Date() };
+
+    // 添加认证token（如果存在）
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // 添加请求ID
+    config.headers['X-Request-ID'] = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(handleError(error, 'Request Interceptor'));
+  }
+);
+
+// 响应拦截器
+api.interceptors.response.use(
+  (response) => {
+    // 计算请求耗时
+    const endTime = new Date();
+    const duration = endTime.getTime() - response.config.metadata.startTime.getTime();
+
+    // 记录慢请求
+    if (duration > 3000) {
+      console.warn(`⚠️  Slow API request: ${response.config.url} took ${duration}ms`);
+    }
+
+    return response;
+  },
+  (error) => {
+    // 处理错误
+    const appError = handleError(error, error.config?.url || 'API Request');
+
+    // 对于认证错误，清除token并跳转登录
+    if (appError.type === 'AUTH' && appError.statusCode === 401) {
+      localStorage.removeItem('auth_token');
+      // TODO: 跳转到登录页
+      // window.location.href = '/login';
+    }
+
+    return Promise.reject(appError);
+  }
+);
+
+// 扩展Axios配置类型以包含metadata
+declare module 'axios' {
+  interface InternalAxiosRequestConfig {
+    metadata?: {
+      startTime: Date;
+    };
+  }
+}
 
 // 类型定义
 export interface BookCreateRequest {
