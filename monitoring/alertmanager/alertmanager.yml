@@ -1,0 +1,129 @@
+# Alertmanager配置文件
+
+global:
+  # 全局解析超时
+  resolve_timeout: 5m
+
+  # SMTP配置（用于邮件告警）
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alertmanager@example.com'
+  smtp_auth_username: 'your-email@gmail.com'
+  smtp_auth_password: 'your-app-password'
+  smtp_require_tls: true
+
+  # Slack配置（用于Slack告警）
+  # slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+# 路由配置
+route:
+  # 默认接收器
+  receiver: 'default'
+
+  # 分组延迟
+  group_wait: 10s
+  # 分组间隔
+  group_interval: 10s
+  # 重复间隔
+  repeat_interval: 12h
+
+  # 分组标签
+  group_by: ['alertname', 'cluster', 'service']
+
+  # 子路由
+  routes:
+    # critical告警立即发送
+    - match:
+        severity: critical
+      receiver: 'critical'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # warning告警
+    - match:
+        severity: warning
+      receiver: 'warning'
+      group_wait: 5m
+      repeat_interval: 1h
+
+    # database告警
+    - match:
+        service: database
+      receiver: 'database-team'
+      group_wait: 10s
+      repeat_interval: 30m
+
+    # AI API告警
+    - match:
+        service: ai-api
+      receiver: 'ai-team'
+      group_wait: 1m
+      repeat_interval: 15m
+
+# 接收器配置
+receivers:
+  # 默认接收器
+  - name: 'default'
+    email_configs:
+      - to: 'team@example.com'
+        headers:
+          Subject: '[Prometheus] {{ .GroupLabels.alertname }}'
+
+  # 关键告警接收器
+  - name: 'critical'
+    email_configs:
+      - to: 'oncall@example.com'
+        headers:
+          Subject: '🚨 [CRITICAL] {{ .GroupLabels.alertname }}'
+
+    # Slack通知（需要配置slack_api_url）
+    # slack_configs:
+    #   - channel: '#alerts-critical'
+    #     title: '🚨 Critical Alert'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+  # 警告告警接收器
+  - name: 'warning'
+    email_configs:
+      - to: 'team@example.com'
+        headers:
+          Subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+
+    # Slack通知
+    # slack_configs:
+    #   - channel: '#alerts-warning'
+    #     title: '⚠️ Warning'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+  # 数据库团队接收器
+  - name: 'database-team'
+    email_configs:
+      - to: 'database-team@example.com'
+        headers:
+          Subject: '[Database Alert] {{ .GroupLabels.alertname }}'
+
+  # AI团队接收器
+  - name: 'ai-team'
+    email_configs:
+      - to: 'ai-team@example.com'
+        headers:
+          Subject: '[AI API Alert] {{ .GroupLabels.alertname }}'
+
+# 抑制规则
+inhibit_rules:
+  # 如果服务宕机，抑制该服务的其他告警
+  - source_match:
+      alertname: 'BackendServiceDown'
+    target_match_re:
+      service: 'backend'
+    equal: ['instance']
+
+  # 如果critical告警触发，抑制warning告警
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# 模板配置（可选）
+# templates:
+#   - '/etc/alertmanager/templates/*.tmpl'

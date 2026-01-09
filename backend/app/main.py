@@ -16,6 +16,8 @@ from app.api.health import router as health_router
 from app.models.database import Base, engine
 from app.core.exceptions import AppException
 from app.core.logging import setup_logging, request_logger, error_logger
+from app.core.metrics import setup_metrics
+from app.core.sentry import init_sentry, SentryConfig
 
 # 配置结构化日志系统
 logger = setup_logging()
@@ -58,6 +60,24 @@ async def lifespan(app: FastAPI):
     logger.info("🗄️  初始化数据库...")
     Base.metadata.create_all(bind=engine)
     logger.info("✅ 数据库初始化完成")
+
+    # 初始化Sentry错误追踪
+    logger.info("🔍 初始化错误追踪...")
+    sentry_config = SentryConfig(
+        sample_rate=1.0,  # 生产环境建议降低到0.1-0.5
+        traces_sample_rate=0.1,  # 性能追踪采样率
+        profiles_sample_rate=0.1,  # 性能剖析采样率
+    )
+    sentry_enabled = init_sentry(sentry_config)
+    if sentry_enabled:
+        logger.info("✅ Sentry错误追踪已启用")
+    else:
+        logger.info("⚠️  Sentry错误追踪未启用")
+
+    # 设置Prometheus监控
+    logger.info("📊 设置性能监控...")
+    setup_metrics(app)
+    logger.info("✅ Prometheus监控已启用")
 
     logger.info("="*60)
     logger.info("✅ 服务启动成功，准备接收请求")
