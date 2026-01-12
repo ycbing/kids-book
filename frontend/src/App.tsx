@@ -1,15 +1,53 @@
 // frontend/src/App.tsx
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { BookOpen, Home, PlusCircle } from 'lucide-react';
 
-import { BookCreator } from './components/BookCreator';
-import { BookViewer } from './components/BookViewer';
-import { BookList } from './components/BookList';
+// 代码分割：懒加载组件
+const BookCreator = lazy(() => import('./components/BookCreator').then(m => ({ default: m.BookCreator })));
+const BookViewer = lazy(() => import('./components/BookViewer').then(m => ({ default: m.BookViewer })));
+const BookList = lazy(() => import('./components/BookList').then(m => ({ default: m.BookList })));
+
+// 加载中组件
+const LoadingFallback: React.FC = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="text-center">
+      <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-purple-500 border-t-transparent"></div>
+      <p className="mt-4 text-gray-600">加载中...</p>
+    </div>
+  </div>
+);
 
 const queryClient = new QueryClient();
+
+// 注册Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('SW registered:', registration);
+
+        // 监听更新
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // 新的service worker可用
+                console.log('New service worker available');
+                // 可以在这里提示用户刷新页面
+              }
+            });
+          }
+        });
+      })
+      .catch((error) => {
+        console.error('SW registration failed:', error);
+      });
+  });
+}
 
 // 导航栏组件
 const Navbar: React.FC = () => {
@@ -123,11 +161,13 @@ const App: React.FC = () => {
         <div className="min-h-screen bg-gray-50">
           <Navbar />
           <main>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/create" element={<BookCreator />} />
-              <Route path="/book/:id" element={<BookPage />} />
-            </Routes>
+            <Suspense fallback={<LoadingFallback />}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/create" element={<BookCreator />} />
+                <Route path="/book/:id" element={<BookPage />} />
+              </Routes>
+            </Suspense>
           </main>
         </div>
         <Toaster position="top-center" />

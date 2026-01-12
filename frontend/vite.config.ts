@@ -27,4 +27,24 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React核心库
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // UI组件库
+          'ui-vendor': ['framer-motion', 'lucide-react', 'react-hot-toast'],
+          // 数据请求和状态管理
+          'utils': ['axios', '@tanstack/react-query'],
+          // 其他第三方库
+          'vendor': ['idb', 'jszip'],
+        },
+      },
+    },
+    // 启用源码映射用于生产环境调试
+    sourcemap: true,
+    // 代码分割阈值
+    chunkSizeWarningLimit: 1000,
+  },
 })
