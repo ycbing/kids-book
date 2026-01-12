@@ -25,3 +25,42 @@ uvicorn app.main:app --reload
 cd frontend
 npm install
 npm run dev
+
+---
+
+## 📚 生产环境部署
+
+### 快速部署
+
+```bash
+# 使用自动部署脚本
+./scripts/deploy.sh        # Linux/macOS
+scripts\deploy.bat         # Windows
+```
+
+### 详细文档
+
+完整的部署文档请查看：
+- 📖 [部署文档索引](./DEPLOYMENT_INDEX.md)
+- 🚀 [生产环境部署指南](./docs/DEPLOYMENT.md)
+- ⚙️ [Nginx配置示例](./deploy/nginx/picturebook.conf)
+
+### 部署脚本
+
+| 脚本 | 说明 |
+|------|------|
+| `scripts/deploy.sh` | 自动部署脚本 |
+| `scripts/backup.sh` | 数据库备份 |
+| `scripts/restore.sh` | 数据库恢复 |
+| `scripts/health-check.sh` | 健康检查 |
+
+---
+
+## 📋 其他文档
+
+- [API优化实施指南](./API_OPTIMIZATION.md)
+- [数据库优化实施指南](./DATABASE_OPTIMIZATION.md)
+- [前端性能优化指南](./FRONTEND_OPTIMIZATION.md)
+- [API文档完善指南](./API_DOCUMENTATION.md)
+- [监控和告警配置](./MONITORING_AND_ALERTING.md)
+- [依赖版本管理](./DEPENDENCY_VERSION_MANAGEMENT.md)
