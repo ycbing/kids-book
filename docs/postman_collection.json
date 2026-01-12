@@ -1,0 +1,383 @@
+{
+  "info": {
+    "name": "AI绘本创作平台 API",
+    "description": "AI驱动的儿童绘本创作平台API集合，包含绘本管理、图片生成、导出等功能",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "api_prefix",
+      "value": "/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "book_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "task_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "健康检查",
+      "item": [
+        {
+          "name": "健康检查",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "检查服务健康状态"
+          }
+        },
+        {
+          "name": "服务信息",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            },
+            "description": "获取服务基本信息"
+          }
+        }
+      ]
+    },
+    {
+      "name": "用户认证",
+      "item": [
+        {
+          "name": "用户登录",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"test\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "auth", "login"]
+            },
+            "description": "用户登录获取访问令牌"
+          },
+          "response": []
+        },
+        {
+          "name": "用户注册",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"newuser\",\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "auth", "register"]
+            },
+            "description": "注册新用户"
+          }
+        }
+      ]
+    },
+    {
+      "name": "绘本管理",
+      "item": [
+        {
+          "name": "创建绘本",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": \"小兔子学会分享\",\n  \"keywords\": [\"友谊\", \"分享\", \"成长\"],\n  \"target_age\": \"3-6岁\",\n  \"style\": \"watercolor\",\n  \"page_count\": 8\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books"]
+            },
+            "description": "创建新绘本并开始生成内容（返回task_id用于查询进度）"
+          }
+        },
+        {
+          "name": "获取绘本详情",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books/{{book_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books", "{{book_id}}"]
+            },
+            "description": "根据ID获取绘本完整信息"
+          }
+        },
+        {
+          "name": "获取绘本列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books?skip=0&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books"],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "获取当前用户的绘本列表（支持分页）"
+          }
+        },
+        {
+          "name": "删除绘本",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books/{{book_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books", "{{book_id}}"]
+            },
+            "description": "删除指定绘本及其所有文件"
+          }
+        },
+        {
+          "name": "更新页面内容",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text_content\": \"更新后的故事文本...\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books/{{book_id}}/pages/1",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books", "{{book_id}}", "pages", "1"]
+            },
+            "description": "更新指定页面的文本内容（不重新生成配图）"
+          }
+        },
+        {
+          "name": "查询任务状态",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/tasks/{{task_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "tasks", "{{task_id}}"]
+            },
+            "description": "查询异步任务的执行状态和进度"
+          }
+        },
+        {
+          "name": "取消任务",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/tasks/{{task_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "tasks", "{{task_id}}", "cancel"]
+            },
+            "description": "取消正在执行的异步任务"
+          }
+        }
+      ]
+    },
+    {
+      "name": "图片生成",
+      "item": [
+        {
+          "name": "生成故事",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": \"勇敢的小海龟\",\n  \"keywords\": [\"勇气\", \"冒险\", \"海洋\"],\n  \"target_age\": \"4-7岁\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/generate/story",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "generate", "story"]
+            },
+            "description": "单独生成故事文本（不创建绘本）"
+          }
+        },
+        {
+          "name": "生成配图",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"一只可爱的小兔子在花园里和朋友分享胡萝卜\",\n  \"style\": \"watercolor\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/generate/image",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "generate", "image"]
+            },
+            "description": "根据描述生成单张配图"
+          }
+        },
+        {
+          "name": "重新生成配图",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books/{{book_id}}/regenerate-image/1?style=cartoon",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books", "{{book_id}}", "regenerate-image", "1"],
+              "query": [
+                {
+                  "key": "style",
+                  "value": "cartoon",
+                  "description": "可选：新的艺术风格"
+                }
+              ]
+            },
+            "description": "为指定页面重新生成配图（可改变风格）"
+          }
+        }
+      ]
+    },
+    {
+      "name": "导出功能",
+      "item": [
+        {
+          "name": "导出为PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"pdf\",\n  \"quality\": \"high\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books/{{book_id}}/export",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books", "{{book_id}}", "export"]
+            },
+            "description": "导出绘本为PDF文档"
+          }
+        },
+        {
+          "name": "导出为PNG",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"png\",\n  \"quality\": \"high\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/books/{{book_id}}/export",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "books", "{{book_id}}", "export"]
+            },
+            "description": "导出绘本为PNG图片集"
+          }
+        },
+        {
+          "name": "下载导出文件",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/download/{{book_id}}/book_{{book_id}}.pdf",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "download", "{{book_id}}", "book_{{book_id}}.pdf"]
+            },
+            "description": "下载已导出的文件（需先调用export接口）"
+          }
+        }
+      ]
+    }
+  ]
+}
