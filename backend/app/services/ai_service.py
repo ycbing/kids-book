@@ -11,9 +11,16 @@ from app.models.schemas import (
 
 class AIService:
     def __init__(self):
+        # 优先使用新的配置项，如果不存在则使用旧的配置项
+        api_key = settings.TEXT_API_KEY or settings.OPENAI_API_KEY
+        base_url = settings.TEXT_BASE_URL or settings.OPENAI_BASE_URL
+
+        if not api_key:
+            raise ValueError("API key not configured. Please set TEXT_API_KEY or OPENAI_API_KEY in .env file")
+
         self.client = openai.AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL
+            api_key=api_key,
+            base_url=base_url
         )
     
     def _get_age_appropriate_guidelines(self, age_group: AgeGroup) -> str:
